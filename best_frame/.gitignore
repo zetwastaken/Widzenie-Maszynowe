@@ -1,7 +1,20 @@
 .venv/
+venv/
 __pycache__/
 *.py[cod]
 *.DS_Store
 out/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
+# IDE/editor files
+.idea/
+.vscode/
+
+# Local env files
+.env
+.env.*
+
+# Notebook checkpoints
+.ipynb_checkpoints/
