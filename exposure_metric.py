@@ -40,9 +40,18 @@ class ExposureMetric(BaseMetric):
 
     def _score_frame(self, frame: np.ndarray) -> float:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        
+        hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
+        
+        total_pixels = gray.size
+
+        overexposed_pixels = np.sum(hist[self.overexpose_pixel_value :])
+        overexposed = float(overexposed_pixels / total_pixels)
+
+        underexposed_pixels = np.sum(hist[: self.underexpose_pixel_value])
+        underexposed = float(underexposed_pixels / total_pixels)
+
         mean = float(gray.mean())
-        overexposed = float(np.mean(gray > self.overexpose_pixel_value))
-        underexposed = float(np.mean(gray < self.underexpose_pixel_value))
 
         over_delta = max(0.0, overexposed - self.overexpose_threshold)
         under_delta = max(0.0, underexposed - self.underexpose_threshold)
