@@ -79,22 +79,13 @@ def analyze_video(
     _THUMB_WIDTH = 360
 
     scored: list[FrameResult] = []
-    best_score = -1.0
-    best_full_frame: np.ndarray | None = None
-    best_frame_index_val = -1
 
     for idx, (frame_index, frame) in enumerate(decoder.stream(input_path, step=config.step)):
         if is_cancelled():
             raise RuntimeError("Analysis cancelled")
-        sharpness = sharpness_metric.score_frames([frame])[0]
+        sharpness_raw = sharpness_metric._score_frame(frame)
         exposure = exposure_metric.score_frames([frame])[0]
         face = face_metric.score_frames([frame])[0]
-        final = scorer.combine(sharpness, exposure, face)
-
-        if final >= best_score:
-            best_score = final
-            best_full_frame = frame
-            best_frame_index_val = frame_index
 
         h, w = frame.shape[:2]
         ratio = _THUMB_WIDTH / max(1, w)
@@ -105,10 +96,10 @@ def analyze_video(
                 rank=0,
                 frame_index=frame_index,
                 frame=thumb,
-                sharpness=sharpness,
+                sharpness=sharpness_raw,
                 exposure=exposure,
                 face=face,
-                final=final,
+                final=0.0,
             )
         )
         # Keep some headroom for write/export phase.
@@ -117,10 +108,33 @@ def analyze_video(
     if not scored:
         raise ValueError("No frames were decoded.")
 
-    # Replace the best frame's thumbnail with the full-resolution original so
-    # the reporter can write it at full quality and the UI can export it.
+    # Normalize sharpness across all frames (same logic as SharpnessMetric.score_frames).
+    raw_variances = [item.sharpness for item in scored]
+    min_v, max_v = min(raw_variances), max(raw_variances)
+    if max_v - min_v < SharpnessMetric.MIN_VARIANCE_THRESHOLD:
+        for item in scored:
+            item.sharpness = 50.0
+    else:
+        for item in scored:
+            item.sharpness = sharpness_metric._clamp_score(
+                ((item.sharpness - min_v) / (max_v - min_v)) * 100.0
+            )
+
+    # Compute final scores and find the best frame index.
     for item in scored:
-        if item.frame_index == best_frame_index_val:
+        item.final = scorer.combine(item.sharpness, item.exposure, item.face)
+    best_item = max(scored, key=lambda item: item.final)
+
+    # Seek to the best frame and read it at full resolution for export/reporting.
+    cap = cv2.VideoCapture(input_path)
+    cap.set(cv2.CAP_PROP_POS_FRAMES, best_item.frame_index)
+    ok, best_full_frame = cap.read()
+    cap.release()
+    if not ok or best_full_frame is None:
+        best_full_frame = best_item.frame  # fall back to thumbnail
+
+    for item in scored:
+        if item.frame_index == best_item.frame_index:
             item.frame = best_full_frame
             break
 
