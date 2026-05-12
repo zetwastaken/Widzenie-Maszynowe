@@ -66,43 +66,45 @@ def analyze_video(
 
     if is_cancelled():
         raise RuntimeError("Analysis cancelled")
-    progress(5, "Decoding frames")
+    progress(5, "Opening video")
 
     decoder = Decoder()
-    frame_records = decoder.decode(path=input_path, step=config.step)
-    frame_indexes = [item[0] for item in frame_records]
-    frames = [item[1] for item in frame_records]
-    total = len(frames)
-    if total == 0:
-        raise ValueError("No frames were decoded.")
+    total = Decoder.count_frames(input_path, config.step)
 
-    sharpness_metric = SharpnessMetric(reference_variance=config.reference_variance)
-    exposure_metric = ExposureMetric(
-        overexpose_threshold=config.overexpose_threshold,
-        underexpose_threshold=config.underexpose_threshold,
-        overexpose_pixel_value=config.overexpose_pixel_value,
-        underexpose_pixel_value=config.underexpose_pixel_value,
-        optimal_brightness_min=config.optimal_brightness_min,
-        optimal_brightness_max=config.optimal_brightness_max,
-        ratio_penalty_scale=config.ratio_penalty_scale,
-        brightness_distance_scale=config.brightness_distance_scale,
-    )
-    face_metric = FaceMetric(ear_threshold=config.ear_threshold)
-    scorer = Scorer(config.w_sharpness, config.w_exposure, config.w_face)
+    sharpness_metric = SharpnessMetric()
+    exposure_metric = ExposureMetric()
+    face_metric = FaceMetric()
+    scorer = Scorer()
+
+    _THUMB_WIDTH = 360
 
     scored: list[FrameResult] = []
-    for idx, (frame_index, frame) in enumerate(zip(frame_indexes, frames, strict=True)):
+    best_score = -1.0
+    best_full_frame: np.ndarray | None = None
+    best_frame_index_val = -1
+
+    for idx, (frame_index, frame) in enumerate(decoder.stream(input_path, step=config.step)):
         if is_cancelled():
             raise RuntimeError("Analysis cancelled")
         sharpness = sharpness_metric.score_frames([frame])[0]
         exposure = exposure_metric.score_frames([frame])[0]
         face = face_metric.score_frames([frame])[0]
         final = scorer.combine(sharpness, exposure, face)
+
+        if final >= best_score:
+            best_score = final
+            best_full_frame = frame
+            best_frame_index_val = frame_index
+
+        h, w = frame.shape[:2]
+        ratio = _THUMB_WIDTH / max(1, w)
+        thumb = cv2.resize(frame, (_THUMB_WIDTH, max(1, int(h * ratio))), interpolation=cv2.INTER_AREA)
+
         scored.append(
             FrameResult(
                 rank=0,
                 frame_index=frame_index,
-                frame=frame,
+                frame=thumb,
                 sharpness=sharpness,
                 exposure=exposure,
                 face=face,
@@ -111,6 +113,16 @@ def analyze_video(
         )
         # Keep some headroom for write/export phase.
         progress(5 + int(((idx + 1) / total) * 85), f"Scoring frame {idx + 1}/{total}")
+
+    if not scored:
+        raise ValueError("No frames were decoded.")
+
+    # Replace the best frame's thumbnail with the full-resolution original so
+    # the reporter can write it at full quality and the UI can export it.
+    for item in scored:
+        if item.frame_index == best_frame_index_val:
+            item.frame = best_full_frame
+            break
 
     sorted_frames = sorted(scored, key=lambda item: item.final, reverse=True)
     for rank, item in enumerate(sorted_frames, start=1):

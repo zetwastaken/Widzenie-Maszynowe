@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import cv2
@@ -34,6 +35,54 @@ class Decoder:
         if angle == 270:
             return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         return frame
+
+    @staticmethod
+    def count_frames(path: str, step: int = 1) -> int:
+        """Estimate number of sampled frames from video metadata (fast, no decoding)."""
+        cap = cv2.VideoCapture(path)
+        if not cap.isOpened():
+            return 1
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap.release()
+        return max(1, (total + step - 1) // step)
+
+    def stream(self, path: str, step: int = 1) -> Iterator[tuple[int, np.ndarray]]:
+        """Yield (frame_index, frame) one at a time without accumulating all frames."""
+        if step < 1:
+            raise ValueError("step must be >= 1")
+
+        video_path = Path(path)
+        if not video_path.exists():
+            raise FileNotFoundError(f"Video file not found: {video_path}")
+
+        capture = cv2.VideoCapture(str(video_path))
+        if not capture.isOpened():
+            raise ValueError(f"Cannot open video file: {video_path}")
+
+        auto_orientation_enabled = False
+        if hasattr(cv2, "CAP_PROP_ORIENTATION_AUTO"):
+            capture.set(cv2.CAP_PROP_ORIENTATION_AUTO, 1)
+            auto_orientation_enabled = bool(int(capture.get(cv2.CAP_PROP_ORIENTATION_AUTO)))
+        orientation_angle = 0 if auto_orientation_enabled else self._get_orientation_rotation(capture)
+
+        frame_index = 0
+        yielded = 0
+        try:
+            while True:
+                ok, frame = capture.read()
+                if not ok:
+                    break
+                if orientation_angle:
+                    frame = self._apply_rotation(frame, orientation_angle)
+                if frame_index % step == 0 and self._is_valid_frame(frame):
+                    yielded += 1
+                    yield frame_index, frame
+                frame_index += 1
+        finally:
+            capture.release()
+
+        if yielded == 0:
+            raise ValueError("No valid frames were decoded from the input video.")
 
     def decode(self, path: str, step: int = 1) -> list[tuple[int, np.ndarray]]:
         if step < 1:
