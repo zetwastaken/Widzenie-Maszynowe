@@ -29,7 +29,7 @@ except ImportError:
 class FaceMetric(BaseMetric):
     """Face + eye-open detector based on MediaPipe Tasks FaceLandmarker."""
 
-    MIN_EAR = 0.15
+    DEFAULT_EAR_THRESHOLD = 0.15
     MAX_EAR = 0.33
     
     # Yawn thresholds (Mouth Aspect Ratio)
@@ -40,9 +40,10 @@ class FaceMetric(BaseMetric):
     MIN_SMILE = 0.45
     MAX_SMILE = 0.65
 
-    def __init__(self, model_path: str = 'face_landmarker.task', num_faces: int = 20) -> None:
+    def __init__(self, model_path: str = 'face_landmarker.task', num_faces: int = 20, ear_threshold: float = DEFAULT_EAR_THRESHOLD) -> None:
         self.model_path = model_path
         self.num_faces = num_faces
+        self.ear_threshold = ear_threshold
         self._detector = None
 
     def _get_detector(self):
@@ -135,8 +136,12 @@ class FaceMetric(BaseMetric):
             left_ear = self._calculate_ear(left_eye_pts)
             right_ear = self._calculate_ear(right_eye_pts)
             avg_ear = (left_ear + right_ear) / 2.0
-            clipped_ear = max(self.MIN_EAR, min(avg_ear, self.MAX_EAR))
-            eyes_score = ((clipped_ear - self.MIN_EAR) / (self.MAX_EAR - self.MIN_EAR)) * 100.0
+            ear_range = self.MAX_EAR - self.ear_threshold
+            if ear_range <= 0:
+                eyes_score = 100.0 if avg_ear >= self.MAX_EAR else 0.0
+            else:
+                clipped_ear = max(self.ear_threshold, min(avg_ear, self.MAX_EAR))
+                eyes_score = ((clipped_ear - self.ear_threshold) / ear_range) * 100.0
             
             # --- 2. Head Pose (looking at camera) ---
             pose_score = self._calculate_head_pose_score(nose_pt, left_face_pt, right_face_pt)
@@ -161,4 +166,4 @@ class FaceMetric(BaseMetric):
             
             scores.append(face_score)
             
-        return float(sum(scores) / len(scores))
+        return self._clamp_score(float(sum(scores) / len(scores)))

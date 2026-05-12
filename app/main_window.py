@@ -292,7 +292,6 @@ class MainWindow(QMainWindow):
         self.w_sharpness = self._make_double_spin(0.0, 1.0, self._default_config.w_sharpness, step=0.01)
         self.w_exposure = self._make_double_spin(0.0, 1.0, self._default_config.w_exposure, step=0.01)
         self.w_face = self._make_double_spin(0.0, 1.0, self._default_config.w_face, step=0.01)
-        self.reference_variance = self._make_double_spin(1.0, 10_000.0, self._default_config.reference_variance, step=10.0)
         self.ear_threshold = self._make_double_spin(0.0, 1.0, self._default_config.ear_threshold, step=0.01)
         self.overexpose_threshold = self._make_double_spin(0.0, 1.0, self._default_config.overexpose_threshold, step=0.01)
         self.underexpose_threshold = self._make_double_spin(0.0, 1.0, self._default_config.underexpose_threshold, step=0.01)
@@ -314,10 +313,6 @@ class MainWindow(QMainWindow):
         params_layout.addRow(self._param_label("Weight sharpness", self.w_sharpness.toolTip()), self.w_sharpness)
         params_layout.addRow(self._param_label("Weight exposure", self.w_exposure.toolTip()), self.w_exposure)
         params_layout.addRow(self._param_label("Weight face", self.w_face.toolTip()), self.w_face)
-        params_layout.addRow(
-            self._param_label("Reference variance", self.reference_variance.toolTip()),
-            self.reference_variance,
-        )
         params_layout.addRow(self._param_label("EAR threshold", self.ear_threshold.toolTip()), self.ear_threshold)
         params_layout.addRow(
             self._param_label("Overexpose threshold", self.overexpose_threshold.toolTip()),
@@ -404,7 +399,6 @@ class MainWindow(QMainWindow):
         self.w_sharpness.setToolTip("Weight of sharpness metric in final score (0..1).")
         self.w_exposure.setToolTip("Weight of exposure metric in final score (0..1).")
         self.w_face.setToolTip("Weight of face/eyes metric in final score (0..1).")
-        self.reference_variance.setToolTip("Reference Laplacian variance used to normalize sharpness score.")
         self.ear_threshold.setToolTip("EAR threshold for open eyes. Higher value makes detection stricter.")
         self.overexpose_threshold.setToolTip("Allowed ratio of very bright pixels before overexposure penalty.")
         self.underexpose_threshold.setToolTip("Allowed ratio of very dark pixels before underexposure penalty.")
@@ -487,7 +481,6 @@ class MainWindow(QMainWindow):
         self.w_sharpness.setValue(defaults.w_sharpness)
         self.w_exposure.setValue(defaults.w_exposure)
         self.w_face.setValue(defaults.w_face)
-        self.reference_variance.setValue(defaults.reference_variance)
         self.ear_threshold.setValue(defaults.ear_threshold)
         self.overexpose_threshold.setValue(defaults.overexpose_threshold)
         self.underexpose_threshold.setValue(defaults.underexpose_threshold)
@@ -506,7 +499,6 @@ class MainWindow(QMainWindow):
             w_sharpness=self.w_sharpness.value(),
             w_exposure=self.w_exposure.value(),
             w_face=self.w_face.value(),
-            reference_variance=self.reference_variance.value(),
             ear_threshold=self.ear_threshold.value(),
             overexpose_threshold=self.overexpose_threshold.value(),
             underexpose_threshold=self.underexpose_threshold.value(),

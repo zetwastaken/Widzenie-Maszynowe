@@ -7,9 +7,8 @@ from base_metric import BaseMetric
 
 class SharpnessMetric(BaseMetric):
     """
-    Variance of Laplacian in grayscale.
-    Most sharpest frame -> 100
-    Least sharpest frame -> 0
+    Laplacian variance sharpness, normalized relative to the batch.
+    Sharpest frame in batch → 100, blurriest → 0.
     """
 
     MIN_VARIANCE_THRESHOLD = 5.0
@@ -20,18 +19,17 @@ class SharpnessMetric(BaseMetric):
 
     def score_frames(self, frames) -> list[float]:
         validated = self._validate_frames(frames)
+        raw = [self._score_frame(f) for f in validated]
+        return self.normalize_batch(raw)
 
-        raw_variances = [self._score_frame(frame) for frame in validated]
-
-        min_var = min(raw_variances)
-        max_var = max(raw_variances)
-
-        if max_var - min_var < self.MIN_VARIANCE_THRESHOLD:
+    @classmethod
+    def normalize_batch(cls, raw_variances: list[float]) -> list[float]:
+        if not raw_variances:
+            return []
+        min_v, max_v = min(raw_variances), max(raw_variances)
+        if max_v - min_v < cls.MIN_VARIANCE_THRESHOLD:
             return [50.0] * len(raw_variances)
-
         return [
-            self._clamp_score(
-                ((v - min_var) / (max_var - min_var)) * self.SCORE_MAX
-            )
+            cls._clamp_score((v - min_v) / (max_v - min_v) * cls.SCORE_MAX)
             for v in raw_variances
         ]

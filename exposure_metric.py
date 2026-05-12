@@ -7,16 +7,23 @@ from base_metric import BaseMetric
 
 
 class ExposureMetric(BaseMetric):
-    """Basic exposure statistics from grayscale histogram."""
+    """
+    Exposure quality score: 100 = perfectly exposed, 0 = severely over/underexposed.
 
-    OVEREXPOSE_THRESHOLD = 0.15
-    UNDEREXPOSE_THRESHOLD = 0.15
+    Penalties:
+      - Ratio of pixels above overexpose_pixel_value exceeding overexpose_threshold
+      - Ratio of pixels below underexpose_pixel_value exceeding underexpose_threshold
+      - Mean brightness outside [optimal_brightness_min, optimal_brightness_max]
+    """
+
+    OVEREXPOSE_THRESHOLD = 0.05
+    UNDEREXPOSE_THRESHOLD = 0.05
     OVEREXPOSE_PIXEL_VALUE = 245
     UNDEREXPOSE_PIXEL_VALUE = 10
-    OPTIMAL_BRIGHTNESS_MIN = 100.0
-    OPTIMAL_BRIGHTNESS_MAX = 150.0
-    RATIO_PENALTY_SCALE = 300.0
-    BRIGHTNESS_DISTANCE_SCALE = 0.50
+    OPTIMAL_BRIGHTNESS_MIN = 90.0
+    OPTIMAL_BRIGHTNESS_MAX = 160.0
+    RATIO_PENALTY_SCALE = 200.0
+    BRIGHTNESS_DISTANCE_SCALE = 0.8
 
     def __init__(
         self,
@@ -40,32 +47,20 @@ class ExposureMetric(BaseMetric):
 
     def _score_frame(self, frame: np.ndarray) -> float:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        
-        hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
-        
-        total_pixels = gray.size
-
-        overexposed_pixels = np.sum(hist[self.overexpose_pixel_value :])
-        overexposed = float(overexposed_pixels / total_pixels)
-
-        underexposed_pixels = np.sum(hist[: self.underexpose_pixel_value])
-        underexposed = float(underexposed_pixels / total_pixels)
-
+        total = gray.size
         mean = float(gray.mean())
 
-        over_delta = max(0.0, overexposed - self.overexpose_threshold)
-        under_delta = max(0.0, underexposed - self.underexpose_threshold)
-        over_penalty = over_delta * self.ratio_penalty_scale
-        under_penalty = under_delta * self.ratio_penalty_scale
+        over_ratio = float(np.sum(gray >= self.overexpose_pixel_value)) / total
+        under_ratio = float(np.sum(gray < self.underexpose_pixel_value)) / total
 
-        brightness_penalty = 0.0
+        over_penalty = max(0.0, over_ratio - self.overexpose_threshold) * self.ratio_penalty_scale
+        under_penalty = max(0.0, under_ratio - self.underexpose_threshold) * self.ratio_penalty_scale
+
         if mean < self.optimal_brightness_min:
-            brightness_penalty = (
-                (self.optimal_brightness_min - mean) * self.brightness_distance_scale
-            )
+            brightness_penalty = (self.optimal_brightness_min - mean) * self.brightness_distance_scale
         elif mean > self.optimal_brightness_max:
-            brightness_penalty = (
-                (mean - self.optimal_brightness_max) * self.brightness_distance_scale
-            )
+            brightness_penalty = (mean - self.optimal_brightness_max) * self.brightness_distance_scale
+        else:
+            brightness_penalty = 0.0
 
-        return self.SCORE_MAX - over_penalty - under_penalty - brightness_penalty
+        return self._clamp_score(self.SCORE_MAX - over_penalty - under_penalty - brightness_penalty)

@@ -72,9 +72,18 @@ def analyze_video(
     total = Decoder.count_frames(input_path, config.step)
 
     sharpness_metric = SharpnessMetric()
-    exposure_metric = ExposureMetric()
-    face_metric = FaceMetric()
-    scorer = Scorer()
+    exposure_metric = ExposureMetric(
+        overexpose_threshold=config.overexpose_threshold,
+        underexpose_threshold=config.underexpose_threshold,
+        overexpose_pixel_value=config.overexpose_pixel_value,
+        underexpose_pixel_value=config.underexpose_pixel_value,
+        optimal_brightness_min=config.optimal_brightness_min,
+        optimal_brightness_max=config.optimal_brightness_max,
+        ratio_penalty_scale=config.ratio_penalty_scale,
+        brightness_distance_scale=config.brightness_distance_scale,
+    )
+    face_metric = FaceMetric(ear_threshold=config.ear_threshold)
+    scorer = Scorer(config.w_sharpness, config.w_exposure, config.w_face)
 
     _THUMB_WIDTH = 360
 
@@ -102,27 +111,17 @@ def analyze_video(
                 final=0.0,
             )
         )
-        # Keep some headroom for write/export phase.
         progress(5 + int(((idx + 1) / total) * 85), f"Scoring frame {idx + 1}/{total}")
 
     if not scored:
         raise ValueError("No frames were decoded.")
 
-    # Normalize sharpness across all frames (same logic as SharpnessMetric.score_frames).
-    raw_variances = [item.sharpness for item in scored]
-    min_v, max_v = min(raw_variances), max(raw_variances)
-    if max_v - min_v < SharpnessMetric.MIN_VARIANCE_THRESHOLD:
-        for item in scored:
-            item.sharpness = 50.0
-    else:
-        for item in scored:
-            item.sharpness = sharpness_metric._clamp_score(
-                ((item.sharpness - min_v) / (max_v - min_v)) * 100.0
-            )
-
-    # Compute final scores and find the best frame index.
-    for item in scored:
+    # Normalize sharpness relative to the full video, then compute final scores.
+    normalized = SharpnessMetric.normalize_batch([item.sharpness for item in scored])
+    for item, sharpness in zip(scored, normalized):
+        item.sharpness = sharpness
         item.final = scorer.combine(item.sharpness, item.exposure, item.face)
+
     best_item = max(scored, key=lambda item: item.final)
 
     # Seek to the best frame and read it at full resolution for export/reporting.
