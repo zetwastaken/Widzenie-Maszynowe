@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from math import hypot
+from pathlib import Path
 
 import cv2
 import numpy as np
 
 from base_metric import BaseMetric
+from runtime_paths import asset_path
 
 LEFT_EYE_INDICES = [33, 160, 158, 133, 153, 144]
 RIGHT_EYE_INDICES = [362, 385, 387, 263, 373, 380]
@@ -40,8 +42,13 @@ class FaceMetric(BaseMetric):
     MIN_SMILE = 0.45
     MAX_SMILE = 0.65
 
-    def __init__(self, model_path: str = 'face_landmarker.task', num_faces: int = 20, ear_threshold: float = DEFAULT_EAR_THRESHOLD) -> None:
-        self.model_path = model_path
+    def __init__(
+        self,
+        model_path: str | None = None,
+        num_faces: int = 20,
+        ear_threshold: float = DEFAULT_EAR_THRESHOLD,
+    ) -> None:
+        self.model_path = str(asset_path("face_landmarker.task") if model_path is None else Path(model_path))
         self.num_faces = num_faces
         self.ear_threshold = ear_threshold
         self._detector = None
